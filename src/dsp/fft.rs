@@ -34,8 +34,8 @@ impl FftProcessor {
         fft.process(&mut buffer);
 
         let mut magnitudes = Vec::with_capacity(self.fft_size / 2);
-        for i in 0..(self.fft_size / 2) {
-            magnitudes.push(buffer[i].norm());
+        for sample in buffer.iter().take(self.fft_size / 2) {
+            magnitudes.push(sample.norm());
         }
 
         magnitudes
