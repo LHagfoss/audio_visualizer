@@ -7,6 +7,8 @@ use audio::stream::AudioStreamer;
 use dsp::fft::FftProcessor;
 use tokio::sync::mpsc;
 
+use crate::dsp::bins::FrequencyBinner;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let manager = AudioDeviceManager::new();
@@ -35,18 +37,39 @@ async fn main() -> anyhow::Result<()> {
 
     println!("\nStreaming live PCM data... Processing FFT bins down channel...");
 
-    let mut fft_processor = FftProcessor::new(2048);
+    let fft_size = 2048;
+    let num_bars = 40;
+    let sample_rate = 48000.0;
 
-    while let Some(raw_samples) = rx.recv().await {
-        let max_amplitude = raw_samples
-            .iter()
-            .fold(0.0f32, |max, &val| max.max(val.abs()));
+    let mut fft_processor = FftProcessor::new(fft_size);
+    let binner = FrequencyBinner::new(num_bars, sample_rate, fft_size);
+    let mut sample_accumulator: Vec<f32> = Vec::with_capacity(fft_size * 2);
 
-        println!(
-            "Buffer length: {}, Peak amplitude: {:.4}",
-            raw_samples.len(),
-            max_amplitude
-        );
+    while let Some(mut raw_samples) = rx.recv().await {
+        sample_accumulator.append(&mut raw_samples);
+
+        while sample_accumulator.len() >= fft_size {
+            let magnitudes = fft_processor.process(&sample_accumulator[..fft_size]);
+            let log_bars = binner.calculate_bins(&magnitudes);
+
+            let visualization: String = log_bars
+                .iter()
+                .map(|&val| {
+                    let height = (val * 35.0) as usize;
+
+                    if height > 0 {
+                        "■".repeat(height.min(12))
+                    } else {
+                        ".".to_string()
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join(" ");
+
+            println!("{}", visualization);
+
+            sample_accumulator.drain(0..512);
+        }
     }
 
     Ok(())
